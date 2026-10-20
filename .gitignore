@@ -1,68 +1,84 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
+# Object files
 *.o
 *.obj
+*.elf
+
+# Linker output
+*.ilk
+*.exp
 
 # Precompiled Headers
 *.gch
 *.pch
 
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
+# Libraries
 *.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
 
 # Executables
 *.exe
 *.out
 *.app
+*.hex
 
-# Build directories
-build/
-Build/
-build-*/
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
 
-# CMake generated files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-install_manifest.txt
-compile_commands.json
+# datadump
+/tools/ddump/*
 
-# Temporary files
-*.tmp
-*.log
-*.bak
+# Text editor remnants
 *.swp
+.vscode/*
 
-# vcpkg
-vcpkg_installed/
+# General project-specific ignores
+doxygen/doxygen/*
+build/*
+*.dump
+*.mio0
+*.z64
+*.map
+.assets-local.txt
 
-# debug information files
-*.dwo
+# Assets. Generally ignored, but ones with "custom" in the name are fine.
+/levels/**/*.png
+/actors/**/*.png
+/textures/**/*.png
+/assets/**/*.bin
+/sound/**/*.m64
+/sound/**/*.aiff
+!/levels/**/*custom*.png
+!/levels/**/*custom*/**/*.png
+!/actors/**/*custom*.png
+!/actors/**/*custom*/**/*.png
+!/textures/**/*custom*.png
+!/textures/**/*custom*/**/*.png
+!/sound/**/*custom*.m64
+!/sound/**/*custom*/**/*.m64
+!/sound/**/*custom*.aiff
+!/sound/**/*custom*/**/*.aiff
+!/assets/**/*custom*.bin
+!/assets/**/*custom*/**/*.bin
 
-# test output & cache
-Testing/
-.cache/
+/baserom.*.z64
+/baserom.*.n64
+/baserom.*.v64
+/android/app/.cxx/
+/android/app/build/
+/android/build/
+/android/.gradle/
+/android/local.properties
+/android/app/jni/SDL/
+/android/app/src/main/assets/
+/build-port/
