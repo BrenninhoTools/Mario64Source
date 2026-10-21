@@ -332,6 +332,7 @@ void audio_game_loop_tick(void) {
 /**
  * Sound processing thread. Runs at 60 FPS.
  */
+#ifdef TARGET_N64
 void thread4_sound(UNUSED void *arg) {
     audio_init();
     sound_init();
@@ -357,3 +358,18 @@ void thread4_sound(UNUSED void *arg) {
         }
     }
 }
+#else
+void sound_thread_init(void) {
+    audio_init();
+    sound_init();
+    vec3f_copy(unused80339DC0, gVec3fZero);
+    osCreateMesgQueue(&sSoundMesgQueue, sSoundMesgBuf, ARRAY_COUNT(sSoundMesgBuf));
+    set_vblank_handler(1, &sSoundVblankHandler, &sSoundMesgQueue, (OSMesg) 512);
+}
+
+void sound_thread_tick(void) {
+    if (gResetTimer < 25) {
+        create_next_audio_frame_task();
+    }
+}
+#endif

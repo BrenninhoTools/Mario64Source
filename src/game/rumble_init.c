@@ -241,6 +241,25 @@ void func_sh_8024CA04(void) {
     gCurrRumbleSettings.unk0C = 4;
 }
 
+#ifndef TARGET_N64
+static void rumble_port_step(void) {
+    update_rumble_data_queue();
+    update_rumble_pak();
+    if (sRumblePakActive) {
+        if (sRumblePakErrorCount >= 30) {
+            sRumblePakActive = FALSE;
+        }
+    } else if (gNumVblanks % 60 == 0) {
+        sRumblePakActive = osMotorInit(&gSIEventMesgQueue, &gRumblePakPfs, gPlayer1Controller->port) == 0;
+        sRumblePakErrorCount = 0;
+    }
+    if (gRumblePakTimer > 0) {
+        gRumblePakTimer--;
+    }
+}
+#endif
+
+#ifdef TARGET_N64
 static void thread6_rumble_loop(UNUSED void *a0) {
     OSMesg msg;
 
@@ -272,6 +291,7 @@ static void thread6_rumble_loop(UNUSED void *a0) {
         }
     }
 }
+#endif
 
 void cancel_rumble(void) {
     sRumblePakActive = osMotorInit(&gSIEventMesgQueue, &gRumblePakPfs, gPlayer1Controller->port) == 0;
@@ -295,9 +315,14 @@ void cancel_rumble(void) {
 }
 
 void create_thread_6(void) {
+#ifdef TARGET_N64
     osCreateMesgQueue(&gRumbleThreadVIMesgQueue, &gRumbleThreadVIMesgBuf, 1);
     osCreateThread(&gRumblePakThread, 6, thread6_rumble_loop, NULL, gThread6Stack + 0x2000, 30);
     osStartThread(&gRumblePakThread);
+#else
+    cancel_rumble();
+    sRumblePakThreadActive = TRUE;
+#endif
 }
 
 void rumble_thread_update_vi(void) {
@@ -305,10 +330,14 @@ void rumble_thread_update_vi(void) {
         return;
     }
 
+#ifdef TARGET_N64
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmultichar"
     osSendMesg(&gRumbleThreadVIMesgQueue, (OSMesg) 'VRTC', OS_MESG_NOBLOCK);
 #pragma GCC diagnostic pop
+#else
+    rumble_port_step();
+#endif
 }
 
 #endif

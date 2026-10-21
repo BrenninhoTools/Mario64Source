@@ -1,0 +1,347 @@
+include util.mk
+
+default: all
+
+VERSION ?= us
+$(eval $(call validate-option,VERSION,jp us eu sh))
+
+HOST_OS := $(shell uname -s 2>/dev/null || echo Unknown)
+ifneq (,$(findstring MINGW,$(HOST_OS)))
+  DEFAULT_PLATFORM := windows
+else ifneq (,$(findstring MSYS,$(HOST_OS)))
+  DEFAULT_PLATFORM := windows
+else ifeq ($(HOST_OS),Darwin)
+  DEFAULT_PLATFORM := macos
+else
+  DEFAULT_PLATFORM := linux
+endif
+
+PLATFORM ?= $(DEFAULT_PLATFORM)
+$(eval $(call validate-option,PLATFORM,linux windows macos android))
+
+DEFINES := NON_MATCHING=1 AVOID_UB=1 F3DEX_GBI_2E=1 F3DEX_GBI_SHARED=1 NO_SEGMENTED_MEMORY=1 WIDESCREEN=1 _FINALROM=1 _LANGUAGE_C=1
+
+ifeq ($(VERSION),jp)
+  DEFINES += VERSION_JP=1
+  VERSION_JP_US := true
+  VERSION_SH_CN := false
+else ifeq ($(VERSION),us)
+  DEFINES += VERSION_US=1
+  VERSION_JP_US := true
+  VERSION_SH_CN := false
+else ifeq ($(VERSION),eu)
+  DEFINES += VERSION_EU=1
+  VERSION_JP_US := false
+  VERSION_SH_CN := false
+else ifeq ($(VERSION),sh)
+  DEFINES += VERSION_SH=1
+  VERSION_JP_US := false
+  VERSION_SH_CN := true
+endif
+
+ifeq ($(PLATFORM),android)
+  DEFINES += PORT_USE_GLES=1
+endif
+
+VERBOSE ?= 0
+ifeq ($(VERBOSE),0)
+  V := @
+endif
+
+define print
+  @printf "$(1) $(2) -> $(3)\n"
+endef
+
+PYTHON := python3
+TOOLS_DIR := tools
+
+ifeq ($(filter clean distclean print-%,$(MAKECMDGOALS)),)
+  NOEXTRACT ?= 0
+  ifeq ($(NOEXTRACT),0)
+    DUMMY != $(PYTHON) extract_assets.py $(VERSION) >&2 || echo FAIL
+    ifeq ($(DUMMY),FAIL)
+      $(error Failed to extract assets. Place your own baserom.$(VERSION).z64 in the repository root)
+    endif
+  endif
+  DUMMY != $(MAKE) -s -C $(TOOLS_DIR) all-except-recomp >&2 || echo FAIL
+  ifeq ($(DUMMY),FAIL)
+    $(error Failed to build tools)
+  endif
+  DUMMY != $(MAKE) -s -C $(TOOLS_DIR)/sm64tools >&2 || echo FAIL
+  ifeq ($(DUMMY),FAIL)
+    $(error Failed to build sm64tools)
+  endif
+endif
+
+BUILD_DIR_BASE := build
+BUILD_DIR := $(BUILD_DIR_BASE)/$(VERSION)_$(PLATFORM)
+
+ifeq ($(PLATFORM),windows)
+  EXE := $(BUILD_DIR)/sm64.$(VERSION).exe
+else ifeq ($(PLATFORM),android)
+  EXE := $(BUILD_DIR)/libmain.so
+else
+  EXE := $(BUILD_DIR)/sm64.$(VERSION)
+endif
+
+TEXTURE_DIR := textures
+ACTOR_DIR := actors
+LEVEL_DIRS := $(patsubst levels/%,%,$(dir $(wildcard levels/*/header.h)))
+
+SRC_DIRS := src src/engine src/game src/audio src/menu src/buffers actors levels bin data assets sound src/port src/port/gfx src/port/audio
+BIN_DIRS := bin bin/$(VERSION)
+GODDARD_SRC_DIRS := src/goddard src/goddard/dynlists
+ULTRA_C_FILES := lib/src/guMtxF2L.c lib/src/guOrthoF.c lib/src/guPerspectiveF.c lib/src/guRotateF.c \
+                 lib/src/guScaleF.c lib/src/guTranslateF.c lib/src/guLookAtRef.c lib/src/guNormalize.c \
+                 lib/src/alBnkfNew.c
+
+include Makefile.split
+
+LEVEL_C_FILES := $(wildcard levels/*/leveldata.c) $(wildcard levels/*/script.c) $(wildcard levels/*/geo.c)
+C_FILES := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c)) $(foreach dir,$(BIN_DIRS),$(wildcard $(dir)/*.c)) \
+           $(LEVEL_C_FILES) $(foreach dir,$(GODDARD_SRC_DIRS),$(wildcard $(dir)/*.c)) $(ULTRA_C_FILES)
+C_FILES := $(sort $(C_FILES))
+GENERATED_C_FILES := $(BUILD_DIR)/assets/mario_anim_data.c $(BUILD_DIR)/assets/demo_data.c \
+                     $(addprefix $(BUILD_DIR)/bin/,$(addsuffix _skybox.c,$(notdir $(basename $(wildcard textures/skyboxes/*.png)))))
+
+SOUND_BANK_FILES := $(wildcard sound/sound_banks/*.json)
+SOUND_SAMPLE_DIRS := $(wildcard sound/samples/*)
+SOUND_SAMPLE_AIFFS := $(foreach dir,$(SOUND_SAMPLE_DIRS),$(wildcard $(dir)/*.aiff))
+SOUND_SAMPLE_TABLES := $(foreach file,$(SOUND_SAMPLE_AIFFS),$(BUILD_DIR)/$(file:.aiff=.table))
+SOUND_SAMPLE_AIFCS := $(foreach file,$(SOUND_SAMPLE_AIFFS),$(BUILD_DIR)/$(file:.aiff=.aifc))
+SOUND_SEQUENCE_DIRS := sound/sequences sound/sequences/$(VERSION)
+SOUND_SEQUENCE_FILES := \
+  $(foreach dir,$(SOUND_SEQUENCE_DIRS),\
+    $(wildcard $(dir)/*.m64) \
+    $(foreach file,$(wildcard $(dir)/*.s),$(BUILD_DIR)/$(file:.s=.m64)) \
+  )
+SOUND_BIN_DIR := $(BUILD_DIR)/sound
+
+TEXTURE_PNGS := $(filter %.rgba16.png %.rgba32.png %.ia1.png %.ia4.png %.ia8.png %.ia16.png %.i4.png %.i8.png, \
+                  $(wildcard levels/*/*.png) $(wildcard levels/*/*/*.png) $(wildcard actors/*/*.png) \
+                  $(wildcard textures/*/*.png))
+TEXTURE_PNGS := $(filter-out textures/ipl3_raw/%,$(TEXTURE_PNGS))
+TEXTURE_INC_FILES := $(addprefix $(BUILD_DIR)/,$(TEXTURE_PNGS:.png=.inc.c))
+CAKE_INC_FILES := $(addprefix $(BUILD_DIR)/,$(patsubst %.png,%.inc.c,$(wildcard levels/ending/cake.png levels/ending/cake_eu.png)))
+
+ifeq ($(VERSION),eu)
+  TEXT_DIRS := text/de text/us text/fr
+  TEXT_INC_FILES := $(BUILD_DIR)/text/us/define_text.inc.c $(BUILD_DIR)/text/de/define_text.inc.c \
+                    $(BUILD_DIR)/text/fr/define_text.inc.c $(BUILD_DIR)/text/us/define_courses.inc.c \
+                    $(BUILD_DIR)/text/de/define_courses.inc.c $(BUILD_DIR)/text/fr/define_courses.inc.c
+else ifeq ($(VERSION),sh)
+  TEXT_DIRS := text/jp
+  TEXT_INC_FILES := $(BUILD_DIR)/text/jp/define_text.inc.c
+else
+  TEXT_DIRS := text/$(VERSION)
+  TEXT_INC_FILES := $(BUILD_DIR)/text/$(VERSION)/define_text.inc.c
+endif
+
+GENERATED_HEADERS := $(BUILD_DIR)/include/text_strings.h $(BUILD_DIR)/include/text_menu_strings.h \
+                     $(BUILD_DIR)/include/level_headers.h $(TEXT_INC_FILES) $(BUILD_DIR)/text/debug_text.raw.inc.c
+
+SOUND_INC_FILES := $(SOUND_BIN_DIR)/sound_data.ctl.inc.c $(SOUND_BIN_DIR)/sound_data.tbl.inc.c \
+                   $(SOUND_BIN_DIR)/sequences.bin.inc.c $(SOUND_BIN_DIR)/bank_sets.inc.c
+ifeq ($(VERSION_SH_CN),true)
+  SOUND_INC_FILES += $(SOUND_BIN_DIR)/sequences_header.inc.c $(SOUND_BIN_DIR)/ctl_header.inc.c \
+                     $(SOUND_BIN_DIR)/tbl_header.inc.c
+endif
+
+O_FILES := $(foreach file,$(C_FILES),$(BUILD_DIR)/$(file:.c=.o)) $(GENERATED_C_FILES:.c=.o)
+DEP_FILES := $(O_FILES:.o=.d)
+
+ifeq ($(PLATFORM),android)
+  ANDROID_API ?= 21
+  NDK_HOST_TAG ?= linux-x86_64
+  NDK_TOOLCHAIN := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/$(NDK_HOST_TAG)/bin
+  CC := $(NDK_TOOLCHAIN)/aarch64-linux-android$(ANDROID_API)-clang
+  SDL2_INCLUDE ?= android/app/jni/SDL/include
+  SDL2_LIB ?= android/build/sdl2/arm64-v8a
+  PLATFORM_CFLAGS := -fPIC -I$(SDL2_INCLUDE)
+  PLATFORM_LDFLAGS := -shared -L$(SDL2_LIB) -lSDL2 -lGLESv2 -llog -landroid -lm -Wl,--no-undefined
+else ifeq ($(PLATFORM),windows)
+  CC ?= gcc
+  SDL2_CONFIG ?= sdl2-config
+  PLATFORM_CFLAGS := $(shell $(SDL2_CONFIG) --cflags)
+  PLATFORM_LDFLAGS := $(shell $(SDL2_CONFIG) --static-libs) -lopengl32 -static -static-libgcc -mwindows
+else ifeq ($(PLATFORM),macos)
+  CC ?= clang
+  SDL2_CONFIG ?= sdl2-config
+  PLATFORM_CFLAGS := $(shell $(SDL2_CONFIG) --cflags)
+  PLATFORM_LDFLAGS := $(shell $(SDL2_CONFIG) --libs) -framework OpenGL
+else
+  CC ?= gcc
+  SDL2_CONFIG ?= sdl2-config
+  PLATFORM_CFLAGS := $(shell $(SDL2_CONFIG) --cflags)
+  PLATFORM_LDFLAGS := $(shell $(SDL2_CONFIG) --libs) -lm -ldl
+endif
+
+ifeq ($(CC),cc)
+  CC := gcc
+endif
+
+OPT_FLAGS ?= -O2
+INCLUDE_DIRS := include $(BUILD_DIR) $(BUILD_DIR)/include src .
+C_DEFINES := $(foreach d,$(DEFINES),-D$(d))
+DEF_INC_CFLAGS := $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(C_DEFINES)
+CFLAGS := $(OPT_FLAGS) -std=gnu11 -fno-strict-aliasing -fwrapv -fsigned-char -fno-common $(DEF_INC_CFLAGS) \
+          $(PLATFORM_CFLAGS) -Wno-format-security -Wno-int-conversion -Wno-incompatible-pointer-types \
+          -Wno-implicit-function-declaration -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast
+PORT_CFLAGS := -Isrc/port -Wall -Wextra -Wno-unused-parameter
+
+ifneq (,$(call find-command,clang))
+  CPP := clang
+  CPPFLAGS := -E -P -x c -Wno-trigraphs -D_LANGUAGE_ASSEMBLY $(DEF_INC_CFLAGS)
+else
+  CPP := cpp
+  CPPFLAGS := -P -Wno-trigraphs -D_LANGUAGE_ASSEMBLY $(DEF_INC_CFLAGS)
+endif
+
+HOST_AS ?= as
+HOST_OBJCOPY ?= objcopy
+
+N64GRAPHICS := $(TOOLS_DIR)/sm64tools/n64graphics
+TEXTCONV := $(TOOLS_DIR)/textconv
+AIFF_EXTRACT_CODEBOOK := $(TOOLS_DIR)/aiff_extract_codebook
+VADPCM_ENC := $(TOOLS_DIR)/vadpcm_enc
+SKYCONV := $(TOOLS_DIR)/skyconv
+ENDIAN_BITWIDTH := $(BUILD_DIR)/endian-and-bitwidth
+CHARMAP := charmap.txt
+CHARMAP_DEBUG := charmap.debug.txt
+TEXTURE_ENCODING := u8
+PRINT := printf
+
+ALL_DIRS := $(sort $(dir $(O_FILES) $(TEXTURE_INC_FILES) $(SOUND_SAMPLE_AIFCS) $(GENERATED_HEADERS) $(SOUND_INC_FILES))) \
+            $(BUILD_DIR)/include $(SOUND_BIN_DIR)/sequences/$(VERSION)
+DUMMY != mkdir -p $(ALL_DIRS)
+
+all: $(EXE)
+
+CHECK_O_FILES := $(filter $(BUILD_DIR)/src/% $(BUILD_DIR)/lib/% $(BUILD_DIR)/data/%,$(O_FILES))
+CHECK_O_FILES := $(filter-out $(BUILD_DIR)/src/goddard/renderer.o $(BUILD_DIR)/src/audio/load_sh.o,$(CHECK_O_FILES))
+
+check: $(CHECK_O_FILES)
+	@$(PRINT) "Source check passed for $(VERSION) on $(PLATFORM)\n"
+
+clean:
+	$(RM) -r $(BUILD_DIR)
+
+distclean:
+	$(RM) -r $(BUILD_DIR_BASE)
+	$(PYTHON) extract_assets.py --clean
+	$(MAKE) -C $(TOOLS_DIR) clean
+	$(MAKE) -C $(TOOLS_DIR)/sm64tools clean
+
+$(O_FILES): | $(GENERATED_HEADERS) $(TEXTURE_INC_FILES) $(CAKE_INC_FILES)
+$(SOUND_BIN_DIR)/sound_data.o: $(SOUND_INC_FILES)
+$(BUILD_DIR)/src/audio/load_sh.o: $(SOUND_INC_FILES)
+$(CRASH_TEXTURE_C_FILES): TEXTURE_ENCODING := u32
+
+$(BUILD_DIR)/%.inc.c: %.png
+	$(call print,Converting:,$<,$@)
+	$(V)$(N64GRAPHICS) -s $(TEXTURE_ENCODING) -i $@ -g $< -f $(lastword ,$(subst ., ,$(basename $<)))
+
+$(BUILD_DIR)/%.table: %.aiff
+	$(call print,Extracting codebook:,$<,$@)
+	$(V)$(AIFF_EXTRACT_CODEBOOK) $< >$@
+
+$(BUILD_DIR)/%.aifc: $(BUILD_DIR)/%.table %.aiff
+	$(call print,Encoding ADPCM:,$(word 2,$^),$@)
+	$(V)$(VADPCM_ENC) -c $^ $@
+
+$(ENDIAN_BITWIDTH): $(TOOLS_DIR)/determine-endian-bitwidth.c
+	@$(PRINT) "Generating endian-bitwidth\n"
+	$(V)$(CC) -c $(CFLAGS) -o $@.dummy2 $< 2>$@.dummy1; true
+	$(V)grep -o 'msgbegin --endian .* --bitwidth .* msgend' $@.dummy1 > $@.dummy2
+	$(V)head -n1 <$@.dummy2 | cut -d' ' -f2-5 > $@
+	$(V)$(RM) $@.dummy1 $@.dummy2
+
+$(SOUND_BIN_DIR)/sound_data.ctl: sound/sound_banks/ $(SOUND_BANK_FILES) $(SOUND_SAMPLE_AIFCS) $(ENDIAN_BITWIDTH)
+	@$(PRINT) "Generating: $@\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/assemble_sound.py $(BUILD_DIR)/sound/samples/ sound/sound_banks/ $(SOUND_BIN_DIR)/sound_data.ctl $(SOUND_BIN_DIR)/ctl_header $(SOUND_BIN_DIR)/sound_data.tbl $(SOUND_BIN_DIR)/tbl_header $(C_DEFINES) $$(cat $(ENDIAN_BITWIDTH))
+
+$(SOUND_BIN_DIR)/sound_data.tbl $(SOUND_BIN_DIR)/ctl_header $(SOUND_BIN_DIR)/tbl_header: $(SOUND_BIN_DIR)/sound_data.ctl
+	@true
+
+$(SOUND_BIN_DIR)/sequences.bin: $(SOUND_BANK_FILES) sound/sequences.json $(SOUND_SEQUENCE_DIRS) $(SOUND_SEQUENCE_FILES) $(ENDIAN_BITWIDTH)
+	@$(PRINT) "Generating: $@\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/assemble_sound.py --sequences $@ $(SOUND_BIN_DIR)/sequences_header $(SOUND_BIN_DIR)/bank_sets sound/sound_banks/ sound/sequences.json $(SOUND_SEQUENCE_FILES) $(C_DEFINES) $$(cat $(ENDIAN_BITWIDTH))
+
+$(SOUND_BIN_DIR)/bank_sets $(SOUND_BIN_DIR)/sequences_header: $(SOUND_BIN_DIR)/sequences.bin
+	@true
+
+$(SOUND_BIN_DIR)/%.m64: $(SOUND_BIN_DIR)/%.o
+	$(call print,Converting to M64:,$<,$@)
+	$(V)$(HOST_OBJCOPY) -j .rodata $< -O binary $@
+
+$(SOUND_BIN_DIR)/%.o: sound/%.s
+	$(call print,Assembling:,$<,$@)
+	$(V)$(CPP) $(CPPFLAGS) $< | $(HOST_AS) -I include -o $@
+
+$(BUILD_DIR)/%.inc.c: $(BUILD_DIR)/%
+	$(call print,Converting to C:,$<,$@)
+	$(V)$(PYTHON) $(TOOLS_DIR)/port_bin2c.py $< $@
+
+$(BUILD_DIR)/assets/mario_anim_data.c: $(wildcard assets/anims/*.inc.c)
+	@$(PRINT) "Generating animation data\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/mario_anims_converter.py > $@
+
+$(BUILD_DIR)/assets/demo_data.c: assets/demo_data.json $(wildcard assets/demos/*.bin)
+	@$(PRINT) "Generating demo data\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/demo_data_converter.py assets/demo_data.json $(DEF_INC_CFLAGS) > $@
+
+$(BUILD_DIR)/$(CHARMAP): $(CHARMAP)
+	$(call print,Preprocessing charmap:,$<,$@)
+	$(V)$(CPP) $(CPPFLAGS) -DBUILD_DIR=$(BUILD_DIR) -o $@ $<
+
+$(BUILD_DIR)/$(CHARMAP_DEBUG): $(CHARMAP)
+	$(call print,Preprocessing charmap:,$<,$@)
+	$(V)$(CPP) $(CPPFLAGS) -DCHARMAP_DEBUG -DBUILD_DIR=$(BUILD_DIR) -o $@ $<
+
+$(BUILD_DIR)/include/text_strings.h: include/text_strings.h.in $(BUILD_DIR)/$(CHARMAP)
+	$(call print,Encoding:,$<,$@)
+	$(V)$(TEXTCONV) $(BUILD_DIR)/$(CHARMAP) $< $@
+
+$(BUILD_DIR)/include/text_menu_strings.h: include/text_menu_strings.h.in
+	$(call print,Encoding:,$<,$@)
+	$(V)$(TEXTCONV) charmap_menu.txt $< $@
+
+$(BUILD_DIR)/text/%/define_courses.inc.c: text/define_courses.inc.c text/%/courses.h $(BUILD_DIR)/$(CHARMAP)
+	@$(PRINT) "Preprocessing: $@\n"
+	$(V)$(CPP) $(CPPFLAGS) $< -o - -I text/$*/ | $(TEXTCONV) $(BUILD_DIR)/$(CHARMAP) - $@
+
+$(BUILD_DIR)/text/%/define_text.inc.c: text/define_text.inc.c text/%/courses.h text/%/dialogs.h $(BUILD_DIR)/$(CHARMAP)
+	@$(PRINT) "Preprocessing: $@\n"
+	$(V)$(CPP) $(CPPFLAGS) $< -o - -I text/$*/ | $(TEXTCONV) $(BUILD_DIR)/$(CHARMAP) - $@
+
+$(BUILD_DIR)/text/debug_text.raw.inc.c: text/debug_text.inc.c $(BUILD_DIR)/$(CHARMAP_DEBUG)
+	@$(PRINT) "Preprocessing: $@\n"
+	$(V)$(CPP) $(CPPFLAGS) $< -o - | $(TEXTCONV) $(BUILD_DIR)/$(CHARMAP_DEBUG) - $@
+
+$(BUILD_DIR)/include/level_headers.h: levels/level_headers.h.in
+	$(call print,Preprocessing level headers:,$<,$@)
+	$(V)$(CPP) $(CPPFLAGS) -I . $< | sed -E 's|(.+)|#include "\1"|' > $@
+
+$(BUILD_DIR)/src/port/%.o: src/port/%.c
+	$(call print,Compiling:,$<,$@)
+	$(V)$(CC) -c $(CFLAGS) $(PORT_CFLAGS) -MMD -MP -MT $@ -MF $(BUILD_DIR)/src/port/$*.d -o $@ $<
+
+$(BUILD_DIR)/%.o: %.c
+	$(call print,Compiling:,$<,$@)
+	$(V)$(CC) -c $(CFLAGS) -MMD -MP -MT $@ -MF $(BUILD_DIR)/$*.d -o $@ $<
+
+$(BUILD_DIR)/%.o: $(BUILD_DIR)/%.c
+	$(call print,Compiling:,$<,$@)
+	$(V)$(CC) -c $(CFLAGS) -MMD -MP -MT $@ -MF $(BUILD_DIR)/$*.d -o $@ $<
+
+$(EXE): $(O_FILES)
+	@$(PRINT) "Linking $@\n"
+	$(V)$(CC) -o $@ $(O_FILES) $(PLATFORM_LDFLAGS)
+
+.PHONY: all clean distclean default check
+.SECONDARY:
+MAKEFLAGS += --no-builtin-rules
+
+-include $(DEP_FILES)
+
+print-% : ; $(info $* is a $(flavor $*) variable set to [$($*)]) @true

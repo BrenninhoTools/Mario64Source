@@ -1,0 +1,41 @@
+name: Source Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: [us, jp, eu, sh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libsdl2-dev python3 binutils
+      - name: Check sources
+        run: make -f Makefile.port NOEXTRACT=1 VERSION=${{ matrix.version }} -j$(nproc) check
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-binutils
+      - name: Check sources
+        run: make -f Makefile.port NOEXTRACT=1 PLATFORM=windows -j$(nproc) check

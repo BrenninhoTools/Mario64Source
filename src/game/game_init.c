@@ -297,6 +297,7 @@ void end_master_display_list(void) {
 /**
  * Draw the bars that appear when the N64 is soft reset.
  */
+#ifdef TARGET_N64
 void draw_reset_bars(void) {
     s32 width, height;
     s32 fbNum;
@@ -323,6 +324,10 @@ void draw_reset_bars(void) {
     osRecvMesg(&gGameVblankQueue, &gMainReceivedMesg, OS_MESG_BLOCK);
     osRecvMesg(&gGameVblankQueue, &gMainReceivedMesg, OS_MESG_BLOCK);
 }
+#else
+void draw_reset_bars(void) {
+}
+#endif
 
 /**
  * Initial settings for the first rendered frame.
@@ -360,6 +365,7 @@ void select_gfx_pool(void) {
  * - Yields to the VI framerate twice, locking the game at 30 FPS.
  * - Selects which framebuffer will be rendered and displayed to next time.
  */
+#ifdef TARGET_N64
 void display_and_vsync(void) {
     profiler_log_thread5_time(BEFORE_DISPLAY_LISTS);
     osRecvMesg(&gGfxVblankQueue, &gMainReceivedMesg, OS_MESG_BLOCK);
@@ -381,6 +387,22 @@ void display_and_vsync(void) {
     }
     gGlobalTimer++;
 }
+#else
+void display_and_vsync(void) {
+    if (gGoddardVblankCallback != NULL) {
+        gGoddardVblankCallback();
+        gGoddardVblankCallback = NULL;
+    }
+    exec_display_list(&gGfxPool->spTask);
+    if (++sRenderedFramebuffer == 3) {
+        sRenderedFramebuffer = 0;
+    }
+    if (++sRenderingFramebuffer == 3) {
+        sRenderingFramebuffer = 0;
+    }
+    gGlobalTimer++;
+}
+#endif
 
 // Controls
 // ----------------------------------------------------------------------------------------------------
@@ -637,6 +659,7 @@ void setup_game_memory(void) {
     load_segment_decompress(2, _segment2_mio0SegmentRomStart, _segment2_mio0SegmentRomEnd);
 }
 
+#ifdef TARGET_N64
 /**
  * Main game loop thread. Runs forever as long as the game continues.
  */
@@ -701,3 +724,46 @@ void thread5_game_loop(UNUSED void *arg) {
         }
     }
 }
+#else
+
+static struct LevelCommand *sPortLevelScript;
+
+void game_loop_init(void) {
+    setup_game_memory();
+#if ENABLE_RUMBLE
+    init_rumble_pak_scheduler_queue();
+#endif
+    init_controllers();
+#if ENABLE_RUMBLE
+    create_thread_6();
+#endif
+    save_file_load_all();
+    set_vblank_handler(2, &gGameVblankHandler, &gGameVblankQueue, (OSMesg) 1);
+    sPortLevelScript = segmented_to_virtual(level_script_entry);
+    play_music(SEQ_PLAYER_SFX, SEQUENCE_ARGS(0, SEQ_SOUND_PLAYER), 0);
+    set_sound_mode(save_file_get_sound_mode());
+    render_init();
+}
+
+void game_loop_iteration(void) {
+    if (gResetTimer != 0) {
+        draw_reset_bars();
+        return;
+    }
+    if (gControllerBits) {
+#if ENABLE_RUMBLE
+        block_until_rumble_pak_free();
+#endif
+        osContStartReadData(&gSIEventMesgQueue);
+    }
+    audio_game_loop_tick();
+    select_gfx_pool();
+    read_controller_inputs();
+    sPortLevelScript = level_script_execute(sPortLevelScript);
+    display_and_vsync();
+    if (gShowDebugText) {
+        print_text_fmt_int(180, 20, "BUF %d", gGfxPoolEnd - (u8 *) gDisplayListHead);
+    }
+}
+
+#endif

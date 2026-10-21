@@ -24,7 +24,16 @@ Note that RECT commands must be enhanced to support negative coordinates with th
 */
 
 #ifdef WIDESCREEN
-#error "widescreen not implemented"
+
+#include <math.h>
+#include "port/gfx/gfx_rsp.h"
+
+#define GFX_DIMENSIONS_ASPECT_RATIO (gfx_current_dimensions.aspect_ratio)
+#define GFX_DIMENSIONS_FROM_LEFT_EDGE(v) (SCREEN_WIDTH / 2 - SCREEN_HEIGHT / 2 * GFX_DIMENSIONS_ASPECT_RATIO + (v))
+#define GFX_DIMENSIONS_FROM_RIGHT_EDGE(v) (SCREEN_WIDTH / 2 + SCREEN_HEIGHT / 2 * GFX_DIMENSIONS_ASPECT_RATIO - (v))
+#define GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(v) ((int) floorf(GFX_DIMENSIONS_FROM_LEFT_EDGE(v)))
+#define GFX_DIMENSIONS_RECT_FROM_RIGHT_EDGE(v) ((int) ceilf(GFX_DIMENSIONS_FROM_RIGHT_EDGE(v)))
+
 #else
 
 #define GFX_DIMENSIONS_FROM_LEFT_EDGE(v) (v)

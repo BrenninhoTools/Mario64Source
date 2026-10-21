@@ -991,6 +991,10 @@ typedef short ENVMIX_STATE[40];
 
 #endif
 
+#ifndef TARGET_N64
+#include "port_audio_abi.h"
+#endif
+
 #endif /* _LANGUAGE_C */
 
 #endif /* !_ABI_H_ */

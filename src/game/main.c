@@ -86,6 +86,7 @@ void handle_debug_key_sequences(void) {
     }
 }
 
+#ifdef TARGET_N64
 void unknown_main_func(void) {
     // uninitialized
     OSTime time;
@@ -460,3 +461,111 @@ void main_func(void) {
     create_thread(&gIdleThread, 1, thread1_idle, NULL, gIdleThreadStack + 0x800, 100);
     osStartThread(&gIdleThread);
 }
+#else
+
+void setup_mesg_queues(void) {
+    osCreateMesgQueue(&gDmaMesgQueue, gDmaMesgBuf, ARRAY_COUNT(gDmaMesgBuf));
+    osCreateMesgQueue(&gSIEventMesgQueue, gSIEventMesgBuf, ARRAY_COUNT(gSIEventMesgBuf));
+    osSetEventMesg(OS_EVENT_SI, &gSIEventMesgQueue, NULL);
+    osCreateMesgQueue(&gSPTaskMesgQueue, gUnknownMesgBuf, ARRAY_COUNT(gUnknownMesgBuf));
+    osCreateMesgQueue(&gIntrMesgQueue, gIntrMesgBuf, ARRAY_COUNT(gIntrMesgBuf));
+}
+
+#ifndef PORT_MAIN_POOL_SIZE
+#define PORT_MAIN_POOL_SIZE 0x1000000
+#endif
+
+static u8 sPortMainPool[PORT_MAIN_POOL_SIZE] __attribute__((aligned(16)));
+
+void alloc_pool(void) {
+    main_pool_init(sPortMainPool, sPortMainPool + sizeof(sPortMainPool));
+    gEffectsMemoryPool = mem_pool_init(0x4000, MEMORY_POOL_LEFT);
+}
+
+void create_thread(OSThread *thread, OSId id, void (*entry)(void *), void *arg, void *sp, OSPri pri) {
+    thread->next = NULL;
+    thread->queue = NULL;
+    osCreateThread(thread, id, entry, arg, sp, pri);
+}
+
+#if defined(VERSION_SH) || defined(VERSION_CN)
+extern void func_sh_802f69cc(void);
+#endif
+
+void handle_nmi_request(void) {
+    gResetTimer = 1;
+    gNmiResetBarsTimer = 0;
+    stop_sounds_in_continuous_banks();
+    sound_banks_disable(SEQ_PLAYER_SFX, SOUND_BANKS_BACKGROUND);
+    fadeout_music(90);
+#if defined(VERSION_SH) || defined(VERSION_CN)
+    func_sh_802f69cc();
+#endif
+}
+
+void port_handle_vblank(void) {
+    gNumVblanks++;
+#if defined(VERSION_SH) || defined(VERSION_CN)
+    if (gResetTimer > 0 && gResetTimer < 100) {
+        gResetTimer++;
+    }
+#else
+    if (gResetTimer > 0) {
+        gResetTimer++;
+    }
+#endif
+#if ENABLE_RUMBLE
+    rumble_thread_update_vi();
+#endif
+}
+
+void set_vblank_handler(s32 index, struct VblankHandler *handler, OSMesgQueue *queue, OSMesg *msg) {
+    handler->queue = queue;
+    handler->msg = msg;
+    switch (index) {
+        case 1:
+            gVblankHandler1 = handler;
+            break;
+        case 2:
+            gVblankHandler2 = handler;
+            break;
+    }
+}
+
+void send_sp_task_message(OSMesg *msg) {
+    (void) msg;
+}
+
+void dispatch_audio_sptask(struct SPTask *spTask) {
+    (void) spTask;
+}
+
+void exec_display_list(struct SPTask *spTask) {
+    if (spTask != NULL) {
+        spTask->state = SPTASK_STATE_FINISHED_DP;
+        sCurrentDisplaySPTask = spTask;
+    }
+}
+
+void *port_take_display_list(void) {
+    struct SPTask *task = sCurrentDisplaySPTask;
+    sCurrentDisplaySPTask = NULL;
+    if (task == NULL) {
+        return NULL;
+    }
+    return (void *) task->task.t.data_ptr;
+}
+
+void turn_on_audio(void) {
+    sAudioEnabled = TRUE;
+}
+
+void turn_off_audio(void) {
+    sAudioEnabled = FALSE;
+}
+
+s32 port_audio_enabled(void) {
+    return sAudioEnabled;
+}
+
+#endif

@@ -82,3 +82,4 @@ build/*
 /android/app/jni/SDL/
 /android/app/src/main/assets/
 /build-port/
+/android/app/src/main/jniLibs/

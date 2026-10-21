@@ -3,9 +3,20 @@
 
 #include "ultratypes.h"
 
+#ifdef TARGET_N64
 // Old deprecated functions from strings.h, replaced by memcpy/memset.
 extern void bcopy(const void *, void *, size_t);
 extern void bzero(void *, size_t);
+#else
+#include <string.h>
+#include <strings.h>
+#undef bcopy
+#undef bzero
+#undef bcmp
+#define bcopy(src, dst, n) memmove((dst), (src), (n))
+#define bzero(dst, n) memset((dst), 0, (n))
+#define bcmp(a, b, n) memcmp((a), (b), (n))
+#endif
 
 /* Printf */
 
