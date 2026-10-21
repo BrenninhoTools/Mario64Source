@@ -1,4 +1,4 @@
-name: Build With ROM
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -11,39 +11,6 @@ on:
         options: [us, jp, eu, sh]
 
 jobs:
-  windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            make
-            git
-            curl
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-python
-            mingw-w64-x86_64-binutils
-      - name: Fetch ROM
-        env:
-          BASEROM_URL: ${{ secrets.BASEROM_URL }}
-        run: |
-          if [ -z "$BASEROM_URL" ]; then echo "BASEROM_URL secret is not set"; exit 1; fi
-          curl -fsSL "$BASEROM_URL" -o baserom.${{ inputs.version }}.z64
-      - name: Build
-        run: make -f Makefile.port PLATFORM=windows VERSION=${{ inputs.version }} -j$(nproc)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sm64-${{ inputs.version }}-windows
-          path: build/${{ inputs.version }}_windows/sm64.${{ inputs.version }}.exe
-          retention-days: 3
-
   android:
     runs-on: ubuntu-latest
     steps:
@@ -56,9 +23,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
-      - name: Install NDK
-        run: sdkmanager "ndk;26.3.11579264" "platforms;android-34" "build-tools;34.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -72,7 +36,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/26.3.11579264"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           ./android/build_native.sh
       - name: Build APK
         run: gradle -p android assembleRelease

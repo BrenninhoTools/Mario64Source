@@ -103,11 +103,12 @@ Saves are written to `sm64_save.eep` in the SDL preferences folder
 
 ## CI
 
-- `Source Check` runs on every push and compiles the sources for all versions on Linux and
-  Windows without needing a ROM.
-- `Build With ROM` is manual. It reads the ROM from a private download link stored in the
-  `BASEROM_URL` secret. Keep in mind that on a public repository the artifacts it uploads can be
-  downloaded by anyone with a GitHub account, so only use it on a private repository.
+- `Android Source Check` runs on every push and compiles the sources for all versions with the
+  Android NDK, without needing a ROM.
+- `Build Android APK` is manual (Actions tab, Run workflow). It reads the ROM from a private
+  download link stored in the `BASEROM_URL` secret and uploads the APK as an artifact. On a public
+  repository anyone with a GitHub account can download artifacts, so only run it on a private
+  repository.
 
 ## Credits
 

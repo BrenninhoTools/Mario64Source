@@ -63,11 +63,11 @@ ifeq ($(filter clean distclean print-%,$(MAKECMDGOALS)),)
       $(error Failed to extract assets. Place your own baserom.$(VERSION).z64 in the repository root)
     endif
   endif
-  DUMMY != $(MAKE) -s -C $(TOOLS_DIR) all-except-recomp >&2 || echo FAIL
+  DUMMY != $(MAKE) -s -C $(TOOLS_DIR) textconv aiff_extract_codebook vadpcm_enc skyconv aifc_decode >&2 || echo FAIL
   ifeq ($(DUMMY),FAIL)
     $(error Failed to build tools)
   endif
-  DUMMY != $(MAKE) -s -C $(TOOLS_DIR)/sm64tools >&2 || echo FAIL
+  DUMMY != $(MAKE) -s -C $(TOOLS_DIR)/sm64tools n64graphics mio0 >&2 || echo FAIL
   ifeq ($(DUMMY),FAIL)
     $(error Failed to build sm64tools)
   endif

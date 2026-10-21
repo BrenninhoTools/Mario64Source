@@ -1,13 +1,14 @@
-name: Source Check
+name: Android Source Check
 
 on:
   push:
   pull_request:
 
 jobs:
-  linux:
+  android:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         version: [us, jp, eu, sh]
     steps:
@@ -15,27 +16,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libsdl2-dev python3 binutils
-      - name: Check sources
-        run: make -f Makefile.port NOEXTRACT=1 VERSION=${{ matrix.version }} -j$(nproc) check
-
-  windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            make
-            git
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-python
-            mingw-w64-x86_64-binutils
-      - name: Check sources
-        run: make -f Makefile.port NOEXTRACT=1 PLATFORM=windows -j$(nproc) check
+          sudo apt-get install -y build-essential python3 binutils
+      - name: Fetch SDL2 headers
+        run: git clone --depth 1 --branch release-2.30.9 https://github.com/libsdl-org/SDL android/app/jni/SDL
+      - name: Check sources with the NDK
+        run: |
+          make -f Makefile.port NOEXTRACT=1 PLATFORM=android VERSION=${{ matrix.version }} \
+            ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" -j$(nproc) check
